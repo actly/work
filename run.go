@@ -1,7 +1,6 @@
 package work
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -38,15 +37,15 @@ func runJob(job *Job, ctxType reflect.Type, middleware []*middlewareHandler, jt 
 		return x.(error)
 	}
 
-	defer func() {
-		if panicErr := recover(); panicErr != nil {
-			// err turns out to be interface{}, of actual type "runtime.errorCString"
-			// Luckily, the err sprints nicely via fmt.
-			errorishError := fmt.Errorf("%v", panicErr)
-			logError("runJob.panic", errorishError)
-			returnError = errorishError
-		}
-	}()
+	// defer func() {
+	// 	if panicErr := recover(); panicErr != nil {
+	// 		// err turns out to be interface{}, of actual type "runtime.errorCString"
+	// 		// Luckily, the err sprints nicely via fmt.
+	// 		errorishError := fmt.Errorf("%v", panicErr)
+	// 		logError("runJob.panic", errorishError)
+	// 		returnError = errorishError
+	// 	}
+	// }()
 
 	returnError = next()
 
