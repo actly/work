@@ -10,11 +10,17 @@ gocraft/work lets you enqueue and processes background jobs in Go. Jobs are dura
 * Enqueue unique jobs so that only one job with a given name/arguments exists in the queue at once.
 * Web UI to manage failed jobs and observe the system.
 * Periodically enqueue jobs on a cron-like schedule.
-* Pause / unpause jobs and control concurrency within and across processes
+* Pause / unpause jobs and control concurrency within and across processes.
+
+Little changes In these fork
+
+* It won't auto recover when a job panic anymore, you need to handle it manually. In order to give us the detail of the stack information.
+
+* Use msgpack to serialize job information instead.
 
 ## Enqueue new jobs
 
-To enqueue jobs, you need to make an Enqueuer with a redis namespace and a redigo pool. Each enqueued job has a name and can take optional arguments. Arguments are k/v pairs (serialized as JSON internally).
+To enqueue jobs, you need to make an Enqueuer with a redis namespace and a redigo pool. Each enqueued job has a name and can take optional arguments. Arguments are k/v pairs (serialized as MsgPack internally).
 
 ```go
 package main
@@ -231,7 +237,7 @@ You'll see a view that looks like this:
 
 ### Enqueueing jobs
 
-* When jobs are enqueued, they're serialized with JSON and added to a simple Redis list with LPUSH.
+* When jobs are enqueued, they're serialized with MsgPack and added to a simple Redis list with LPUSH.
 * Jobs are added to a list with the same name as the job. Each job name gets its own queue. Whereas with other job systems you have to design which jobs go on which queues, there's no need for that here.
 
 ### Scheduling algorithm
