@@ -45,7 +45,7 @@ func (e *Enqueuer) Enqueue(jobName string, args map[string]interface{}) (*Job, e
 		Args:       args,
 	}
 
-	rawJSON, err := job.serialize()
+	rawMsg, err := job.serialize()
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (e *Enqueuer) Enqueue(jobName string, args map[string]interface{}) (*Job, e
 	conn := e.Pool.Get()
 	defer conn.Close()
 
-	if _, err := conn.Do("LPUSH", e.queuePrefix+jobName, rawJSON); err != nil {
+	if _, err := conn.Do("LPUSH", e.queuePrefix+jobName, rawMsg); err != nil {
 		return nil, err
 	}
 
@@ -73,7 +73,7 @@ func (e *Enqueuer) EnqueueIn(jobName string, secondsFromNow int64, args map[stri
 		Args:       args,
 	}
 
-	rawJSON, err := job.serialize()
+	rawMsg, err := job.serialize()
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (e *Enqueuer) EnqueueIn(jobName string, secondsFromNow int64, args map[stri
 		Job:   job,
 	}
 
-	_, err = conn.Do("ZADD", redisKeyScheduled(e.Namespace), scheduledJob.RunAt, rawJSON)
+	_, err = conn.Do("ZADD", redisKeyScheduled(e.Namespace), scheduledJob.RunAt, rawMsg)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (e *Enqueuer) EnqueueUnique(jobName string, args map[string]interface{}) (*
 		Unique:     true,
 	}
 
-	rawJSON, err := job.serialize()
+	rawMsg, err := job.serialize()
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (e *Enqueuer) EnqueueUnique(jobName string, args map[string]interface{}) (*
 	scriptArgs := make([]interface{}, 0, 3)
 	scriptArgs = append(scriptArgs, e.queuePrefix+jobName) // KEY[1]
 	scriptArgs = append(scriptArgs, uniqueKey)             // KEY[2]
-	scriptArgs = append(scriptArgs, rawJSON)               // ARGV[1]
+	scriptArgs = append(scriptArgs, rawMsg)                // ARGV[1]
 
 	res, err := redis.String(e.enqueueUniqueScript.Do(conn, scriptArgs...))
 	if res == "ok" && err == nil {
@@ -157,7 +157,7 @@ func (e *Enqueuer) EnqueueUniqueIn(jobName string, secondsFromNow int64, args ma
 		Unique:     true,
 	}
 
-	rawJSON, err := job.serialize()
+	rawMsg, err := job.serialize()
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (e *Enqueuer) EnqueueUniqueIn(jobName string, secondsFromNow int64, args ma
 	scriptArgs := make([]interface{}, 0, 4)
 	scriptArgs = append(scriptArgs, redisKeyScheduled(e.Namespace)) // KEY[1]
 	scriptArgs = append(scriptArgs, uniqueKey)                      // KEY[2]
-	scriptArgs = append(scriptArgs, rawJSON)                        // ARGV[1]
+	scriptArgs = append(scriptArgs, rawMsg)                         // ARGV[1]
 	scriptArgs = append(scriptArgs, scheduledJob.RunAt)             // ARGV[2]
 
 	res, err := redis.String(e.enqueueUniqueInScript.Do(conn, scriptArgs...))

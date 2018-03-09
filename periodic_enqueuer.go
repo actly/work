@@ -104,12 +104,12 @@ func (pe *periodicEnqueuer) enqueue() error {
 				Args:       nil,
 			}
 
-			rawJSON, err := job.serialize()
+			rawMsg, err := job.serialize()
 			if err != nil {
 				return err
 			}
 
-			_, err = conn.Do("ZADD", redisKeyScheduled(pe.namespace), epoch, rawJSON)
+			_, err = conn.Do("ZADD", redisKeyScheduled(pe.namespace), epoch, rawMsg)
 			if err != nil {
 				return err
 			}

@@ -1,9 +1,9 @@
 package work
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/garyburd/redigo/redis"
+	"github.com/ugorji/go/codec"
 	"time"
 )
 
@@ -196,19 +196,25 @@ func (o *observer) writeStatus(obv *observation) error {
 		// job_name -> obv.Name
 		// job_id -> obv.jobID
 		// started_at -> obv.startedAt
-		// args -> json.Encode(obv.arguments)
+		// args -> msgpack.Encode(obv.arguments)
 		// checkin -> obv.checkin
 		// checkin_at -> obv.checkinAt
 
-		var argsJSON []byte
+		var argsMsg []byte
 		if len(obv.arguments) == 0 {
-			argsJSON = []byte("")
+			argsMsg = []byte("")
 		} else {
-			var err error
-			argsJSON, err = json.Marshal(obv.arguments)
-			if err != nil {
+			d := getBuffer()
+			defer putBuffer(d)
+
+			if err := codec.NewEncoder(d, mh).Encode(obv.arguments); err != nil {
 				return err
 			}
+			argsMsg = d.Bytes()
+			// argsMsg, err = json.Marshal(obv.arguments)
+			// if err != nil {
+			// 	return err
+			// }
 		}
 
 		args := make([]interface{}, 0, 13)
@@ -217,7 +223,7 @@ func (o *observer) writeStatus(obv *observation) error {
 			"job_name", obv.jobName,
 			"job_id", obv.jobID,
 			"started_at", obv.startedAt,
-			"args", argsJSON,
+			"args", argsMsg,
 		)
 
 		if (obv.checkin != "") && (obv.checkinAt > 0) {

@@ -9,7 +9,11 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
-const fetchKeysPerJobType = 6
+const (
+	fetchKeysPerJobType       = 6
+	keepInterval        int64 = 86400 * 5
+	maxFailedJobs             = 1000
+)
 
 type worker struct {
 	workerID    string
@@ -160,7 +164,7 @@ func (w *worker) fetchJob() (*Job, error) {
 		return nil, fmt.Errorf("need 3 elements back")
 	}
 
-	rawJSON, ok := values[0].([]byte)
+	rawMsg, ok := values[0].([]byte)
 	if !ok {
 		return nil, fmt.Errorf("response msg not bytes")
 	}
@@ -175,7 +179,7 @@ func (w *worker) fetchJob() (*Job, error) {
 		return nil, fmt.Errorf("response in prog not bytes")
 	}
 
-	job, err := newJob(rawJSON, dequeuedFrom, inProgQueue)
+	job, err := newJob(rawMsg, dequeuedFrom, inProgQueue)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +231,7 @@ func (w *worker) removeJobFromInProgress(job *Job) {
 
 	// remove job from in progress and decr the lock in one transaction
 	conn.Send("MULTI")
-	conn.Send("LREM", job.inProgQueue, 1, job.rawJSON)
+	conn.Send("LREM", job.inProgQueue, 1, job.rawMsg)
 	conn.Send("DECR", redisKeyJobsLock(w.namespace, job.Name))
 	conn.Send("HINCRBY", redisKeyJobsLockInfo(w.namespace, job.Name), w.poolID, -1)
 	if _, err := conn.Do("EXEC"); err != nil {
@@ -247,7 +251,7 @@ func (w *worker) addToRetryOrDead(jt *jobType, job *Job, runErr error) {
 }
 
 func (w *worker) addToRetry(job *Job, runErr error) {
-	rawJSON, err := job.serialize()
+	rawMsg, err := job.serialize()
 	if err != nil {
 		logError("worker.add_to_retry", err)
 		return
@@ -269,17 +273,17 @@ func (w *worker) addToRetry(job *Job, runErr error) {
 	}
 
 	conn.Send("MULTI")
-	conn.Send("LREM", job.inProgQueue, 1, job.rawJSON)
+	conn.Send("LREM", job.inProgQueue, 1, job.rawMsg)
 	conn.Send("DECR", redisKeyJobsLock(w.namespace, job.Name))
 	conn.Send("HINCRBY", redisKeyJobsLockInfo(w.namespace, job.Name), w.poolID, -1)
-	conn.Send("ZADD", redisKeyRetry(w.namespace), nowEpochSeconds()+backoff(job), rawJSON)
+	conn.Send("ZADD", redisKeyRetry(w.namespace), nowEpochSeconds()+backoff(job), rawMsg)
 	if _, err = conn.Do("EXEC"); err != nil {
 		logError("worker.add_to_retry.exec", err)
 	}
 }
 
 func (w *worker) addToDead(job *Job, runErr error) {
-	rawJSON, err := job.serialize()
+	rawMsg, err := job.serialize()
 
 	if err != nil {
 		logError("worker.add_to_dead.serialize", err)
@@ -291,14 +295,16 @@ func (w *worker) addToDead(job *Job, runErr error) {
 
 	// NOTE: sidekiq limits the # of jobs: only keep jobs for 6 months, and only keep a max # of jobs
 	// The max # of jobs seems really horrible. Seems like operations should be on top of it.
-	// conn.Send("ZREMRANGEBYSCORE", redisKeyDead(w.namespace), "-inf", now - keepInterval)
-	// conn.Send("ZREMRANGEBYRANK", redisKeyDead(w.namespace), 0, -maxJobs)
+
+	now := nowEpochSeconds()
 
 	conn.Send("MULTI")
-	conn.Send("LREM", job.inProgQueue, 1, job.rawJSON)
+	conn.Send("ZREMRANGEBYSCORE", redisKeyDead(w.namespace), "-inf", now-keepInterval)
+	conn.Send("ZREMRANGEBYRANK", redisKeyDead(w.namespace), 0, -maxFailedJobs)
+	conn.Send("LREM", job.inProgQueue, 1, job.rawMsg)
 	conn.Send("DECR", redisKeyJobsLock(w.namespace, job.Name))
 	conn.Send("HINCRBY", redisKeyJobsLockInfo(w.namespace, job.Name), w.poolID, -1)
-	conn.Send("ZADD", redisKeyDead(w.namespace), nowEpochSeconds(), rawJSON)
+	conn.Send("ZADD", redisKeyDead(w.namespace), now, rawMsg)
 	_, err = conn.Do("EXEC")
 	if err != nil {
 		logError("worker.add_to_dead.exec", err)

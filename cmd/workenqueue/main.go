@@ -1,11 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"github.com/gocraft/work"
+	"github.com/ugorji/go/codec"
 	"os"
 	"time"
 )
@@ -14,6 +14,12 @@ var redisHostPort = flag.String("redis", ":6379", "redis hostport")
 var redisNamespace = flag.String("ns", "work", "redis namespace")
 var jobName = flag.String("job", "", "job name")
 var jobArgs = flag.String("args", "{}", "job arguments")
+
+var (
+	mh = &codec.MsgpackHandle{
+		RawToString: true,
+	}
+)
 
 func main() {
 	flag.Parse()
@@ -26,11 +32,16 @@ func main() {
 	pool := newPool(*redisHostPort)
 
 	var args map[string]interface{}
-	err := json.Unmarshal([]byte(*jobArgs), &args)
-	if err != nil {
+
+	if err := codec.NewDecoderBytes([]byte(*jobArgs), mh).Decode(&args); err != nil {
 		fmt.Println("invalid args:", err)
 		os.Exit(1)
 	}
+	// err := json.Unmarshal([]byte(*jobArgs), &args)
+	// if err != nil {
+	// 	fmt.Println("invalid args:", err)
+	// 	os.Exit(1)
+	// }
 
 	en := work.NewEnqueuer(*redisNamespace, pool)
 	en.Enqueue(*jobName, args)

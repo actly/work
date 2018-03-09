@@ -1,10 +1,12 @@
 package work
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
+	"github.com/ugorji/go/codec"
 	"math"
 	"reflect"
+	"sync"
 )
 
 // Job represents a job.
@@ -21,7 +23,7 @@ type Job struct {
 	LastErr  string `json:"err,omitempty"`
 	FailedAt int64  `json:"failed_at,omitempty"`
 
-	rawJSON      []byte
+	rawMsg       []byte
 	dequeuedFrom []byte
 	inProgQueue  []byte
 	argError     error
@@ -32,20 +34,50 @@ type Job struct {
 // Example: e.Enqueue("send_email", work.Q{"addr": "test@example.com", "track": true})
 type Q map[string]interface{}
 
-func newJob(rawJSON, dequeuedFrom, inProgQueue []byte) (*Job, error) {
+var (
+	mh = &codec.MsgpackHandle{
+		RawToString: true,
+	}
+	bufPool = sync.Pool{
+		New: func() interface{} {
+			return new(bytes.Buffer)
+		},
+	}
+)
+
+func getBuffer() *bytes.Buffer {
+	b := bufPool.Get().(*bytes.Buffer)
+	b.Reset()
+
+	return b
+}
+
+func putBuffer(b *bytes.Buffer) {
+	bufPool.Put(b)
+}
+
+func newJob(rawMsg, dequeuedFrom, inProgQueue []byte) (*Job, error) {
 	var job Job
-	err := json.Unmarshal(rawJSON, &job)
-	if err != nil {
+
+	if err := codec.NewDecoderBytes(rawMsg, mh).Decode(&job); err != nil {
 		return nil, err
 	}
-	job.rawJSON = rawJSON
+
+	job.rawMsg = rawMsg
 	job.dequeuedFrom = dequeuedFrom
 	job.inProgQueue = inProgQueue
 	return &job, nil
 }
 
 func (j *Job) serialize() ([]byte, error) {
-	return json.Marshal(j)
+	d := getBuffer()
+	defer putBuffer(d)
+
+	if err := codec.NewEncoder(d, mh).Encode(j); err != nil {
+		return []byte{}, err
+	}
+
+	return d.Bytes(), nil
 }
 
 // setArg sets a single named argument on the job.
