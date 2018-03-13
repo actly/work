@@ -204,13 +204,11 @@ func (o *observer) writeStatus(obv *observation) error {
 		if len(obv.arguments) == 0 {
 			argsMsg = []byte("")
 		} else {
-			d := getBuffer()
-			defer putBuffer(d)
+			argsMsg = []byte{}
 
-			if err := codec.NewEncoder(d, mh).Encode(obv.arguments); err != nil {
+			if err := codec.NewEncoderBytes(&argsMsg, mh).Encode(obv.arguments); err != nil {
 				return err
 			}
-			argsMsg = d.Bytes()
 			// argsMsg, err = json.Marshal(obv.arguments)
 			// if err != nil {
 			// 	return err

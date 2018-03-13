@@ -1,12 +1,10 @@
 package work
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/ugorji/go/codec"
 	"math"
 	"reflect"
-	"sync"
 )
 
 // Job represents a job.
@@ -38,23 +36,7 @@ var (
 	mh = &codec.MsgpackHandle{
 		RawToString: true,
 	}
-	bufPool = sync.Pool{
-		New: func() interface{} {
-			return new(bytes.Buffer)
-		},
-	}
 )
-
-func getBuffer() *bytes.Buffer {
-	b := bufPool.Get().(*bytes.Buffer)
-	b.Reset()
-
-	return b
-}
-
-func putBuffer(b *bytes.Buffer) {
-	bufPool.Put(b)
-}
 
 func newJob(rawMsg, dequeuedFrom, inProgQueue []byte) (*Job, error) {
 	var job Job
@@ -70,14 +52,13 @@ func newJob(rawMsg, dequeuedFrom, inProgQueue []byte) (*Job, error) {
 }
 
 func (j *Job) serialize() ([]byte, error) {
-	d := getBuffer()
-	defer putBuffer(d)
 
-	if err := codec.NewEncoder(d, mh).Encode(j); err != nil {
+	bs := []byte{}
+	if err := codec.NewEncoderBytes(&bs, mh).Encode(j); err != nil {
 		return []byte{}, err
 	}
 
-	return d.Bytes(), nil
+	return bs, nil
 }
 
 // setArg sets a single named argument on the job.
