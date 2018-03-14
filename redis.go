@@ -2,8 +2,8 @@ package work
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/ugorji/go/codec"
 )
 
 func redisNamespacePrefix(namespace string) string {
@@ -81,7 +81,7 @@ func redisKeyUniqueJob(namespace, jobName string, args map[string]interface{}) (
 	buf.WriteRune(':')
 
 	if args != nil {
-		err := json.NewEncoder(&buf).Encode(args)
+		err := codec.NewEncoder(&buf, mh).Encode(args)
 		if err != nil {
 			return "", err
 		}
@@ -227,19 +227,19 @@ var redisLuaZremLpushCmd = `
 local res, j, queue
 res = redis.call('zrangebyscore', KEYS[1], '-inf', ARGV[2], 'LIMIT', 0, 1)
 if #res > 0 then
-  j = cjson.decode(res[1])
+  j = cmsgpack.unpack(res[1])
   redis.call('zrem', KEYS[1], res[1])
   queue = ARGV[1] .. j['name']
   for _,v in pairs(KEYS) do
     if v == queue then
       j['t'] = tonumber(ARGV[2])
-      redis.call('lpush', queue, cjson.encode(j))
+      redis.call('lpush', queue, cmsgpack.pack(j))
       return 'ok'
     end
   end
   j['err'] = 'unknown job when requeueing'
   j['failed_at'] = tonumber(ARGV[2])
-  redis.call('zadd', KEYS[2], ARGV[2], cjson.encode(j))
+  redis.call('zadd', KEYS[2], ARGV[2], cmsgpack.pack(j))
   return 'dead' -- put on dead queue
 end
 return nil
@@ -258,7 +258,7 @@ local jobCount = #jobs
 jobBytes = ''
 deletedCount = 0
 for i=1,jobCount do
-  j = cjson.decode(jobs[i])
+  j = cmsgpack.unpack(jobs[i])
   if j['id'] == ARGV[2] then
     redis.call('zrem', KEYS[1], jobs[i])
     deletedCount = deletedCount + 1
@@ -281,7 +281,7 @@ jobs = redis.call('zrangebyscore', KEYS[1], ARGV[3], ARGV[3])
 local jobCount = #jobs
 requeuedCount = 0
 for i=1,jobCount do
-  j = cjson.decode(jobs[i])
+  j = cmsgpack.unpack(jobs[i])
   if j['id'] == ARGV[4] then
     redis.call('zrem', KEYS[1], jobs[i])
     queue = ARGV[1] .. j['name']
@@ -292,7 +292,7 @@ for i=1,jobCount do
         j['fails'] = nil
         j['failed_at'] = nil
         j['err'] = nil
-        redis.call('lpush', queue, cjson.encode(j))
+        redis.call('lpush', queue, cmsgpack.pack(j))
         requeuedCount = requeuedCount + 1
         found = true
         break
@@ -301,7 +301,7 @@ for i=1,jobCount do
     if not found then
       j['err'] = 'unknown job when requeueing'
       j['failed_at'] = tonumber(ARGV[2])
-      redis.call('zadd', KEYS[1], ARGV[2] + 5, cjson.encode(j))
+      redis.call('zadd', KEYS[1], ARGV[2] + 5, cmsgpack.pack(j))
     end
   end
 end
@@ -320,7 +320,7 @@ jobs = redis.call('zrangebyscore', KEYS[1], '-inf', ARGV[2], 'LIMIT', 0, ARGV[3]
 local jobCount = #jobs
 requeuedCount = 0
 for i=1,jobCount do
-  j = cjson.decode(jobs[i])
+  j = cmsgpack.unpack(jobs[i])
   redis.call('zrem', KEYS[1], jobs[i])
   queue = ARGV[1] .. j['name']
   found = false
@@ -330,7 +330,7 @@ for i=1,jobCount do
       j['fails'] = nil
       j['failed_at'] = nil
       j['err'] = nil
-      redis.call('lpush', queue, cjson.encode(j))
+      redis.call('lpush', queue, cmsgpack.pack(j))
       requeuedCount = requeuedCount + 1
       found = true
       break
@@ -339,7 +339,7 @@ for i=1,jobCount do
   if not found then
     j['err'] = 'unknown job when requeueing'
     j['failed_at'] = tonumber(ARGV[2])
-    redis.call('zadd', KEYS[1], ARGV[2] + 5, cjson.encode(j))
+    redis.call('zadd', KEYS[1], ARGV[2] + 5, cmsgpack.pack(j))
   end
 end
 return requeuedCount
