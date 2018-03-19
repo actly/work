@@ -6,16 +6,18 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/gocraft/work/webui"
+	"github.com/liu1700/work/webui"
 )
 
 var (
-	redisHostPort  = flag.String("redis", ":6379", "redis hostport")
+	redisHost      = flag.String("host", "127.0.0.1", "redis host")
+	redisPort      = flag.String("port", "6379", "redis port")
 	redisDatabase  = flag.String("database", "0", "redis database")
-	redisNamespace = flag.String("ns", "work", "redis namespace")
+	redisNamespace = flag.String("namespace", "work", "redis namespace")
 	webHostPort    = flag.String("listen", ":5040", "hostport to listen for HTTP JSON API")
 )
 
@@ -23,7 +25,8 @@ func main() {
 	flag.Parse()
 
 	fmt.Println("Starting workwebui:")
-	fmt.Println("redis = ", *redisHostPort)
+	fmt.Println("redis host = ", *redisHost)
+	fmt.Println("redis port = ", *redisPort)
 	fmt.Println("database = ", *redisDatabase)
 	fmt.Println("namespace = ", *redisNamespace)
 	fmt.Println("listen = ", *webHostPort)
@@ -34,29 +37,34 @@ func main() {
 		return
 	}
 
-	pool := newPool(*redisHostPort, database)
+	pool := newPool(*redisHost, *redisPort, database)
 
 	server := webui.NewServer(*redisNamespace, pool, *webHostPort)
 	server.Start()
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, os.Kill)
+	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	<-c
 
+	fmt.Println("Stopping server...")
 	server.Stop()
 
 	fmt.Println("\nQuitting...")
 }
 
-func newPool(addr string, database int) *redis.Pool {
+func newPool(addr string, port string, database int) *redis.Pool {
 	return &redis.Pool{
 		MaxActive:   3,
 		MaxIdle:     3,
 		IdleTimeout: 240 * time.Second,
+		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return redis.DialURL(addr, redis.DialDatabase(database))
+			return redis.Dial("tcp", fmt.Sprintf("%s:%s", addr, port), redis.DialDatabase(database))
 		},
-		Wait: true,
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
 	}
 }
