@@ -10,19 +10,20 @@ import (
 )
 
 const (
-	fetchKeysPerJobType       = 6
-	keepInterval        int64 = 86400 * 5
-	maxFailedJobs             = 1000
+	fetchKeysPerJobType = 6
+	// keepInterval        int64 = 86400 * 5
+	// maxFailedJobs = 1000
 )
 
 type worker struct {
-	workerID    string
-	poolID      string
-	namespace   string
-	pool        *redis.Pool
-	jobTypes    map[string]*jobType
-	middleware  []*middlewareHandler
-	contextType reflect.Type
+	workerID     string
+	poolID       string
+	namespace    string
+	pool         *redis.Pool
+	jobTypes     map[string]*jobType
+	middleware   []*middlewareHandler
+	maxFailedJob int
+	contextType  reflect.Type
 
 	redisFetchScript *redis.Script
 	sampler          prioritySampler
@@ -58,6 +59,10 @@ func newWorker(namespace string, poolID string, pool *redis.Pool, contextType re
 	w.updateMiddlewareAndJobTypes(middleware, jobTypes)
 
 	return w
+}
+
+func (w *worker) setMaxFailedJobsCount(maxFailedJobs int) {
+	w.maxFailedJob = maxFailedJobs
 }
 
 // note: can't be called while the thing is started
@@ -298,9 +303,11 @@ func (w *worker) addToDead(job *Job, runErr error) {
 
 	now := nowEpochSeconds()
 
+	// conn.Send("ZREMRANGEBYSCORE", redisKeyDead(w.namespace), "-inf", now-keepInterval)
 	conn.Send("MULTI")
-	conn.Send("ZREMRANGEBYSCORE", redisKeyDead(w.namespace), "-inf", now-keepInterval)
-	conn.Send("ZREMRANGEBYRANK", redisKeyDead(w.namespace), 0, -maxFailedJobs)
+	if w.maxFailedJob > 0 {
+		conn.Send("ZREMRANGEBYRANK", redisKeyDead(w.namespace), 0, -w.maxFailedJob)
+	}
 	conn.Send("LREM", job.inProgQueue, 1, job.rawMsg)
 	conn.Send("DECR", redisKeyJobsLock(w.namespace, job.Name))
 	conn.Send("HINCRBY", redisKeyJobsLockInfo(w.namespace, job.Name), w.poolID, -1)

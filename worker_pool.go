@@ -95,6 +95,14 @@ func NewWorkerPool(ctx interface{}, concurrency uint, namespace string, pool *re
 	return wp
 }
 
+// SetMaxFailedJobsCount set max failed jobs count limit to all workers,
+// if maxFailedJobs as n > 0, redis will keep the latest n failed jobs only
+func (wp *WorkerPool) SetMaxFailedJobsCount(maxFailedJobs int) {
+	for i := 0; i < len(wp.workers); i++ {
+		wp.workers[i].setMaxFailedJobsCount(maxFailedJobs)
+	}
+}
+
 // Middleware appends the specified function to the middleware chain. The fn can take one of these forms:
 // (*ContextType).func(*Job, NextMiddlewareFunc) error, (ContextType matches the type of ctx specified when creating a pool)
 // func(*Job, NextMiddlewareFunc) error, for the generic middleware format.
