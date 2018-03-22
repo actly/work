@@ -574,6 +574,22 @@ func (c *Client) getZsetPage(key string, page uint) ([]jobScore, int64, error) {
 			return nil, 0, err
 		}
 
+		m := job.Args
+		if len(m) > 0 && m["data"] != nil {
+			switch t := m["data"].(type) {
+			case map[interface{}]interface{}:
+				newD := make(map[string]interface{})
+				for k, v := range t {
+					newD[fmt.Sprintf("%v", k)] = v
+				}
+				job.Args["data"] = newD
+			case map[string]interface{}, string:
+				break
+			default:
+				fmt.Printf("Invalid type: %T, data:%v \n", m["data"], m["data"])
+			}
+		}
+
 		jobsWithScores[i].job = job
 	}
 
