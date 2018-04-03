@@ -1,8 +1,8 @@
 package webui
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/ugorji/go/codec"
 	"net/http"
 	"strconv"
 	"sync"
@@ -28,6 +28,12 @@ type Server struct {
 type context struct {
 	*Server
 }
+
+var (
+	jh = &codec.JsonHandle{
+		MapKeyAsString: true,
+	}
+)
 
 // NewServer creates and returns a new server. The 'namespace' param is the redis namespace to use. The hostPort param is the address to bind on to expose the API.
 func NewServer(namespace string, pool *redis.Pool, hostPort string) *Server {
@@ -132,8 +138,8 @@ func (c *context) retryJobs(rw web.ResponseWriter, r *web.Request) {
 	}
 
 	response := struct {
-		Count int64            `json:"count"`
-		Jobs  []*work.RetryJob `json:"jobs"`
+		Count int64            `codec:"count"`
+		Jobs  []*work.RetryJob `codec:"jobs"`
 	}{Count: count, Jobs: jobs}
 
 	render(rw, response, err)
@@ -153,8 +159,8 @@ func (c *context) scheduledJobs(rw web.ResponseWriter, r *web.Request) {
 	}
 
 	response := struct {
-		Count int64                `json:"count"`
-		Jobs  []*work.ScheduledJob `json:"jobs"`
+		Count int64                `codec:"count"`
+		Jobs  []*work.ScheduledJob `codec:"jobs"`
 	}{Count: count, Jobs: jobs}
 
 	render(rw, response, err)
@@ -174,8 +180,8 @@ func (c *context) deadJobs(rw web.ResponseWriter, r *web.Request) {
 	}
 
 	response := struct {
-		Count int64           `json:"count"`
-		Jobs  []*work.DeadJob `json:"jobs"`
+		Count int64           `codec:"count"`
+		Jobs  []*work.DeadJob `codec:"jobs"`
 	}{Count: count, Jobs: jobs}
 
 	render(rw, response, err)
@@ -221,7 +227,9 @@ func render(rw web.ResponseWriter, jsonable interface{}, err error) {
 		return
 	}
 
-	jsonData, err := json.MarshalIndent(jsonable, "", "\t")
+	jsonData := []byte{}
+	err = codec.NewEncoderBytes(&jsonData, jh).Encode(jsonable)
+
 	if err != nil {
 		renderError(rw, err)
 		return
